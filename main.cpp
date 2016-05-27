@@ -6398,6 +6398,7 @@ int main(int argc, char* args[]) {
                                                 d->y = fx->y+8;
                                                 for(int pa = 0; pa < d->params.size(); pa++) {
                                                     d->params.at(pa)->value = fx->params.at(pa)->value;
+                                                    d->params.at(pa)->points.clear();
                                                     for(int po = 0; po < fx->params.at(pa)->points.size(); po++) {
                                                         CPoint* cp = new CPoint();
                                                         cp->a = fx->params.at(pa)->points.at(po)->a;
