@@ -106,7 +106,7 @@
 using namespace std;
 
 const int Vmajor = 0;
-const int Vminor = 1;
+const int Vminor = 2;
 const int Vrevision = 0;
 
 SDL_Window* window = NULL;
