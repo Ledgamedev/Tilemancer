@@ -1646,10 +1646,11 @@ static string executable_path()
     _NSGetExecutablePath(cwd, &size);
 #else
     ssize_t readSize = readlink("/proc/self/exe", cwd, size);
-    if (readSize == 0 || readSize == size) {
+    if (readSize <= 0 || readSize == size) {
         printf("Could not determine executable path!\n");
         exit(1);
     }
+    cwd[readSize] = 0;
 #endif
     return string(cwd);
 }
@@ -1756,9 +1757,11 @@ void importPresets() {
 void importFxs() {
     string cwd2 = executable_path();
     cwd2.erase(cwd2.rfind('/'));
+#if defined(__APPLE__)
     cwd2.erase(cwd2.rfind('/'));
     cwd2.erase(cwd2.rfind('/'));
     cwd2.erase(cwd2.rfind('/'));
+#endif
     if(cwd2.size() < 1) {
         cwd2 = "/Nodes";
     } else {
@@ -1805,9 +1808,11 @@ void importFxs() {
        void importPresets() {
            string cwd2 = executable_path();
            cwd2.erase(cwd2.rfind('/'));
+#if defined(__APPLE__)
            cwd2.erase(cwd2.rfind('/'));
            cwd2.erase(cwd2.rfind('/'));
            cwd2.erase(cwd2.rfind('/'));
+#endif
            if(cwd2.size() < 1) {
                cwd2 = "/Presets";
            } else {
