@@ -20,6 +20,13 @@
 
 #define _USE_MATH_DEFINES
 
+enum {
+    Windows = 0x1,
+    Apple   = 0x2,
+    Linux   = 0x4,
+    Unix    = Apple | Linux
+};
+
 #ifdef _WIN32
     #define GLEW_STATIC
     #include <SDL.h>
@@ -53,7 +60,7 @@
 
     const char* my_vertex_shader_source = (char*)"#version 130\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = int(mod(frame, 5)); int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
     const char* my_fragment_shader_source = (char*)"#version 130\n uniform sampler2D tex; in vec2 txc; out vec4 fragColor; uniform float alpha; void main() { fragColor = vec4(texture2D(tex, txc).xyz, texture2D(tex, txc).w*alpha); }";
-    int OS = 0;
+    int OS = Windows;
 #elif defined(__APPLE__)
     #include <SDL2/SDL.h>
     #include <OpenGL/gl3.h>
@@ -76,9 +83,9 @@
     const char* my_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
     const char* my_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; layout(location = 1) out vec4 fragColorN; layout(location = 2) out vec4 fragColorMisc; layout(location = 3) out vec4 fragColorB; uniform vec2 flip; uniform sampler2D tex; uniform float strength; uniform float alpha; uniform float depth; uniform sampler2D texN; in vec2 txc; void main() { fragColor = vec4(texture(tex, txc).xyz/texture(tex, txc).w, texture(tex, txc).w*alpha); }";
     CFBundleRef mainBundle;
-    int OS = 1;
+    int OS = Apple;
 #elif defined(__linux__)
-    int OS = 2;
+    int OS = Linux;
     #define GL_GLEXT_PROTOTYPES
     #include <GL/gl.h>
     #include <SDL2/SDL.h>
@@ -873,9 +880,9 @@ void exportTexSingle(string dir) {
     SDL_Surface *surface = SDL_CreateRGBSurface(SDL_SWSURFACE, texSizeX, texSizeY, 32, 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
     glBindTexture(GL_TEXTURE_2D, currentSocket->texture);
     GLfloat *pixels = new GLfloat[int(texSizeX*texSizeY*4)];
-    if(OS == 0) {
+    if(OS & Windows) {
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, surface->pixels);
-    } else if(OS == 1) {
+    } else if(OS & Unix) {
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, pixels);
         for(int i = 0; i < texSizeX*texSizeY*4; i++) {
             Uint8 *p = (Uint8 *)surface->pixels+i*surface->format->BytesPerPixel/4;
@@ -2677,9 +2684,9 @@ void browserAction(string dir, string subDir, string parent) {
     }
     if(browserMode == 0) {
         if(exists) {
-            if(OS == 0) {
+            if(OS & Windows) {
                 palImg = loadTexture2(dir);
-            } else if(OS == 1) {
+            } else if(OS & Unix) {
                 palImg = loadTexture(dir);
             }
             loadPalette();
@@ -3540,14 +3547,14 @@ void update() { //update
                     //glDeleteTextures(1, &output->texture);
                     glGenTextures(1, &output->texture);
                     glBindTexture(GL_TEXTURE_2D, output->texture);
-                    if(OS == 0) {
+                    if(OS & Windows) {
                         vector<GLubyte> bv;
                         for(int db = 0; db < output->texData.size(); db++) {
                             GLubyte c = fmax(0.0, fmin(255.0, output->texData.at(db)));
                             bv.push_back(c);
                         }
                         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texSizeX, texSizeY, 0, GL_RGBA, GL_UNSIGNED_BYTE, &bv[0]);
-                    } else if(OS == 1) {
+                    } else if(OS & Unix) {
                         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, texSizeX, texSizeY, 0, GL_RGBA, GL_FLOAT, &output->texData[0]);
                     }
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -6227,9 +6234,9 @@ int main(int argc, char* args[]) {
                                         if(doubleClickTimer <= 20 && selectedFile == i) {
                                             string fullDir = currentDir;
                                             if(fullDir.size() != 1) {
-                                                if(OS == 0) {
+                                                if(OS & Windows) {
                                                     fullDir = fullDir.append("\\");
-                                                } else if(OS == 1) {
+                                                } else if(OS & Unix) {
                                                     fullDir = fullDir.append("/");
                                                 }
                                             }
@@ -6290,9 +6297,9 @@ int main(int argc, char* args[]) {
                                 string newDir = currentDir;
                                 newDir.erase(newDir.rfind('/'));
                                 if(newDir.size() < 1) {
-                                    if(OS == 0) {
+                                    if(OS & Windows) {
                                         newDir = "\\";
-                                    } else if(OS == 1) {
+                                    } else if(OS & Unix) {
                                         newDir = "/";
                                     }
                                 }
@@ -6307,9 +6314,9 @@ int main(int argc, char* args[]) {
                                 //action
                                 string fullDir = currentDir;
                                 if(fullDir.size() != 1) {
-                                    if(OS == 0) {
+                                    if(OS & Windows) {
                                         fullDir = fullDir.append("\\");
-                                    } else if(OS == 1) {
+                                    } else if(OS & Unix) {
                                         fullDir = fullDir.append("/");
                                     }
                                 }
@@ -6990,7 +6997,7 @@ int main(int argc, char* args[]) {
                     int sw = 0;
                     int sh = 0;
                     SDL_GetWindowPosition(window, &sx, &sy);
-                    if(OS == 0) {
+                    if(OS & Windows) {
                         mx += sx;
                         my += sy;
                     }
@@ -7011,9 +7018,9 @@ int main(int argc, char* args[]) {
                         my-=sh;
                         oy-=sh/screenScale;
                     }
-                    if(OS == 0) {
+                    if(OS & Windows) {
                         warpMouse(mx-sx, my-sy);
-                    } else if(OS == 1) {
+                    } else if(OS & Unix) {
                         warpMouse(mx, my);
                     }
                     x += ox;
