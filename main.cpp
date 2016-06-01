@@ -54,7 +54,7 @@
     const char* my_vertex_shader_source = (char*)"#version 130\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = int(mod(frame, 5)); int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
     const char* my_fragment_shader_source = (char*)"#version 130\n uniform sampler2D tex; in vec2 txc; out vec4 fragColor; uniform float alpha; void main() { fragColor = vec4(texture2D(tex, txc).xyz, texture2D(tex, txc).w*alpha); }";
     int OS = 0;
-#elif __APPLE__
+#elif defined(__APPLE__)
     #include <SDL2/SDL.h>
     #include <OpenGL/gl3.h>
     #include "CoreFoundation/CFBundle.h"
@@ -77,8 +77,28 @@
     const char* my_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; layout(location = 1) out vec4 fragColorN; layout(location = 2) out vec4 fragColorMisc; layout(location = 3) out vec4 fragColorB; uniform vec2 flip; uniform sampler2D tex; uniform float strength; uniform float alpha; uniform float depth; uniform sampler2D texN; in vec2 txc; void main() { fragColor = vec4(texture(tex, txc).xyz/texture(tex, txc).w, texture(tex, txc).w*alpha); }";
     CFBundleRef mainBundle;
     int OS = 1;
-#elif __linux__
+#elif defined(__linux__)
     int OS = 2;
+    #define GL_GLEXT_PROTOTYPES
+    #include <GL/gl.h>
+    #include <SDL2/SDL.h>
+    #include <SDL2/SDL_image.h>
+    #include <SDL2/SDL_mixer.h>
+    #include <SDL2/SDL_ttf.h>
+    #include <pwd.h>
+    #include <future>
+
+    const char* light_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
+    const char* light_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; uniform vec3 color; uniform vec3 color2; in vec2 txc; void main() { fragColor = vec4(color*(1.0-txc.x)+color2*txc.x, 1.0); }";
+
+    const char* blur_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2((t.x+tx)*frameSize.x/texSize.x, (t.y+ty)*frameSize.y/texSize.y); }";
+    const char* blur_fragment_shader_source = (char*)"#version 330\n#define M_PI 3.1415926535897932384626433832795\nlayout(location = 0) out vec4 fragColor; in vec2 txc; uniform sampler2D tex; uniform vec2 texSize; uniform float v; uniform bool tri; uniform bool full; void main() { float a = 0.0; vec2 dist = vec2(0.5, 0.5)-txc; a = ((length(dist)>0.5) ? 0.0 : 1.0); a = ((length(dist)<0.4) ? 0.0 : a); a = (tri ? 1.0 : a); float H = atan(dist.y, dist.x)/M_PI*180.0+180.0; H = (H==360 ? 0.0 : H); H = (tri ? v : H); float S = (tri ? txc.x/txc.y : 1.0); float V = (tri ? txc.y : 1.0); float C = V*S; float X = C*(1.0-abs(mod(H/60.0, 2)-1.0)); float m = V-C; vec3 rgb = vec3(0.0, 0.0, 0.0); if(0 <= H && H < 60) { rgb = vec3(C, X, 0.0); } else if(60 <= H && H < 120) { rgb = vec3(X, C, 0.0); } else if(120 <= H && H < 180) { rgb = vec3(0.0, C, X); } else if(180 <= H && H < 240) { rgb = vec3(0.0, X, C); } else if(240 <= H && H < 300) { rgb = vec3(X, 0.0, C); } else if(300 <= H && H < 360) { rgb = vec3(C, 0.0, X); } rgb = rgb+m; float d = 10.0; vec3 finalColor = vec3(0.0, 0.0, 0.0); for(int x = 0; x < texSize.x; x++) { for(int y = 0; y < texSize.y; y++) { vec3 color = vec3(texture(tex, vec2(x/texSize.x, y/texSize.y))); vec3 dist = rgb-color; float d2 = length(dist); if(d2 < d) { d = d2; finalColor = color; } } } if(full) { finalColor = rgb; }  fragColor = vec4(finalColor, a); }";
+
+    const char* transition_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2((t.x+tx)*frameSize.x/texSize.x, (t.y+ty)*frameSize.y/texSize.y); }";
+    const char* transition_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; uniform float rot; uniform vec2 texSize; uniform sampler2D tex; uniform sampler2D texP; in vec2 txc; void main() { vec3 off = vec3(-1.0/texSize.x, 0.0, 1.0/texSize.x); vec2 size = vec2(2.0, 0.0); float s11 = texture(tex, txc).x; float s01 = texture(tex, txc+off.xy).x; float s21 = texture(tex, txc+off.zy).x; float s10 = texture(tex, txc+off.yx).x; float s12 = texture(tex, txc+off.yz).x; vec3 va = normalize(vec3(size.xy,s21-s01)); vec3 vb = normalize(vec3(size.yx,s12-s10)); vec3 bump = vec3(cross(va,vb)); vec3 light = vec3(sin(rot), -cos(rot), 0.3); float d = max(0.0, dot(normalize(light), bump)); vec2 ptxc = vec2(d, 0.0); vec3 colorFinal = vec3(texture(texP, ptxc)); fragColor = vec4(colorFinal, 1.0)";
+
+    const char* my_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
+    const char* my_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; layout(location = 1) out vec4 fragColorN; layout(location = 2) out vec4 fragColorMisc; layout(location = 3) out vec4 fragColorB; uniform vec2 flip; uniform sampler2D tex; uniform float strength; uniform float alpha; uniform float depth; uniform sampler2D texN; in vec2 txc; void main() { fragColor = vec4(texture(tex, txc).xyz/texture(tex, txc).w, texture(tex, txc).w*alpha); }";
 #else
     int OS = -1;
 #endif
@@ -631,7 +651,7 @@ GLuint loadTexture2(string path) {
     }
     return tex;
 }
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__linux__)
 GLuint loadTexture(string path) {
     GLuint tex;
     SDL_Surface* ls = IMG_Load(path.c_str());
@@ -659,7 +679,6 @@ GLuint loadTexture(string path) {
 GLuint loadTexture2(string path) {
     return NULL;
 }
-#elif __linux__
 #else
 #endif
 
@@ -1610,12 +1629,27 @@ void nEffect::AbortLua(lua_State* L, lua_Debug* ar) {
 
 //-----------------------------------
 
-#ifdef _WIN32
-void importFxs() {
+static string executable_path()
+{
     char cwd[1024];
     uint32_t size = sizeof(cwd);
+#if defined(__WIN32)
     GetModuleFileName(NULL, cwd, size);
-    string cwd2 = string(cwd);
+#elif defined(__APPLE__)
+    _NSGetExecutablePath(cwd, &size);
+#else
+    ssize_t readSize = readlink("/proc/self/exe", cwd, size);
+    if (readSize == 0 || readSize == size) {
+        printf("Could not determine executable path!\n");
+        exit(1);
+    }
+#endif
+    return string(cwd);
+}
+
+#ifdef _WIN32
+void importFxs() {
+    string cwd2 = executable_path();
     cwd2.erase(cwd2.rfind('\\'));
     if(cwd2.size() < 1) {
         cwd2 = "\\Nodes";
@@ -1664,10 +1698,7 @@ void importFxs() {
 }
 
 void importPresets() {
-    char cwd[1024];
-    uint32_t size = sizeof(cwd);
-    GetModuleFileName(NULL, cwd, size);
-    string cwd2 = string(cwd);
+    string cwd2 = executable_path();
     cwd2.erase(cwd2.rfind('\\'));
     if(cwd2.size() < 1) {
         cwd2 = "\\Presets";
@@ -1714,12 +1745,9 @@ void importPresets() {
     } else {
     }
 }
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__linux__)
 void importFxs() {
-    char cwd[1024];
-    uint32_t size = sizeof(cwd);
-    _NSGetExecutablePath(cwd, &size);
-    string cwd2 = string(cwd);
+    string cwd2 = executable_path();
     cwd2.erase(cwd2.rfind('/'));
     cwd2.erase(cwd2.rfind('/'));
     cwd2.erase(cwd2.rfind('/'));
@@ -1768,10 +1796,7 @@ void importFxs() {
     }
 }
        void importPresets() {
-           char cwd[1024];
-           uint32_t size = sizeof(cwd);
-           _NSGetExecutablePath(cwd, &size);
-           string cwd2 = string(cwd);
+           string cwd2 = executable_path();
            cwd2.erase(cwd2.rfind('/'));
            cwd2.erase(cwd2.rfind('/'));
            cwd2.erase(cwd2.rfind('/'));
@@ -1819,7 +1844,6 @@ void importFxs() {
                }
            }
        }
-#elif __linux__
 #else
 #endif
 
@@ -2803,10 +2827,6 @@ void browserAction(string dir, string subDir, string parent) {
            browserOpen = true;
        }
 
-       void getBundle() {
-           //nothing here
-       }
-
        void setIcon() {
            unzFile data = unzOpen("data.lpf");
            unz_file_info info;
@@ -2840,7 +2860,7 @@ void browserAction(string dir, string subDir, string parent) {
        void warpMouse(int x, int y) {
            SDL_WarpMouseInWindow(window, x, y);
        }
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__linux__)
        void openBrowser(string dir, int type, int mode) {
            overwrite = false;
            browserMode = mode;
@@ -2924,10 +2944,6 @@ void browserAction(string dir, string subDir, string parent) {
            browserOpen = true;
        }
 
-       void getBundle() {
-           mainBundle = CFBundleGetMainBundle();
-       }
-
        void setIcon() {
            //nothing here
        }
@@ -2951,7 +2967,6 @@ void browserAction(string dir, string subDir, string parent) {
        void warpMouse(int x, int y) {
            SDL_WarpMouseGlobal(x, y);
        }
-#elif __linux__
 #else
 #endif
 
@@ -3129,7 +3144,10 @@ void LoadStuff() {
     loadGen();
 
     logoTimer = logoTimerMax;
-    getBundle();
+
+#ifdef __APPLE__
+    mainBundle = CFBundleGetMainBundle();
+#endif
 }
 
 int textW(string text, int x, int y, GLuint tex, bool alignRight) {
