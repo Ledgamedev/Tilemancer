@@ -20,6 +20,13 @@
 
 #define _USE_MATH_DEFINES
 
+enum {
+    Windows = 0x1,
+    Apple   = 0x2,
+    Linux   = 0x4,
+    Unix    = Apple | Linux
+};
+
 #ifdef _WIN32
     #define GLEW_STATIC
     #include <SDL.h>
@@ -53,8 +60,8 @@
 
     const char* my_vertex_shader_source = (char*)"#version 130\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = int(mod(frame, 5)); int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
     const char* my_fragment_shader_source = (char*)"#version 130\n uniform sampler2D tex; in vec2 txc; out vec4 fragColor; uniform float alpha; void main() { fragColor = vec4(texture2D(tex, txc).xyz, texture2D(tex, txc).w*alpha); }";
-    int OS = 0;
-#elif __APPLE__
+    int OS = Windows;
+#elif defined(__APPLE__)
     #include <SDL2/SDL.h>
     #include <OpenGL/gl3.h>
     #include "CoreFoundation/CFBundle.h"
@@ -76,9 +83,29 @@
     const char* my_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
     const char* my_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; layout(location = 1) out vec4 fragColorN; layout(location = 2) out vec4 fragColorMisc; layout(location = 3) out vec4 fragColorB; uniform vec2 flip; uniform sampler2D tex; uniform float strength; uniform float alpha; uniform float depth; uniform sampler2D texN; in vec2 txc; void main() { fragColor = vec4(texture(tex, txc).xyz/texture(tex, txc).w, texture(tex, txc).w*alpha); }";
     CFBundleRef mainBundle;
-    int OS = 1;
-#elif __linux__
-    int OS = 2;
+    int OS = Apple;
+#elif defined(__linux__)
+    int OS = Linux;
+    #define GL_GLEXT_PROTOTYPES
+    #include <GL/gl.h>
+    #include <SDL2/SDL.h>
+    #include <SDL2/SDL_image.h>
+    #include <SDL2/SDL_mixer.h>
+    #include <SDL2/SDL_ttf.h>
+    #include <pwd.h>
+    #include <future>
+
+    const char* light_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
+    const char* light_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; uniform vec3 color; uniform vec3 color2; in vec2 txc; void main() { fragColor = vec4(color*(1.0-txc.x)+color2*txc.x, 1.0); }";
+
+    const char* blur_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2((t.x+tx)*frameSize.x/texSize.x, (t.y+ty)*frameSize.y/texSize.y); }";
+    const char* blur_fragment_shader_source = (char*)"#version 330\n#define M_PI 3.1415926535897932384626433832795\nlayout(location = 0) out vec4 fragColor; in vec2 txc; uniform sampler2D tex; uniform vec2 texSize; uniform float v; uniform bool tri; uniform bool full; void main() { float a = 0.0; vec2 dist = vec2(0.5, 0.5)-txc; a = ((length(dist)>0.5) ? 0.0 : 1.0); a = ((length(dist)<0.4) ? 0.0 : a); a = (tri ? 1.0 : a); float H = atan(dist.y, dist.x)/M_PI*180.0+180.0; H = (H==360 ? 0.0 : H); H = (tri ? v : H); float S = (tri ? txc.x/txc.y : 1.0); float V = (tri ? txc.y : 1.0); float C = V*S; float X = C*(1.0-abs(mod(H/60.0, 2)-1.0)); float m = V-C; vec3 rgb = vec3(0.0, 0.0, 0.0); if(0 <= H && H < 60) { rgb = vec3(C, X, 0.0); } else if(60 <= H && H < 120) { rgb = vec3(X, C, 0.0); } else if(120 <= H && H < 180) { rgb = vec3(0.0, C, X); } else if(180 <= H && H < 240) { rgb = vec3(0.0, X, C); } else if(240 <= H && H < 300) { rgb = vec3(X, 0.0, C); } else if(300 <= H && H < 360) { rgb = vec3(C, 0.0, X); } rgb = rgb+m; float d = 10.0; vec3 finalColor = vec3(0.0, 0.0, 0.0); for(int x = 0; x < texSize.x; x++) { for(int y = 0; y < texSize.y; y++) { vec3 color = vec3(texture(tex, vec2(x/texSize.x, y/texSize.y))); vec3 dist = rgb-color; float d2 = length(dist); if(d2 < d) { d = d2; finalColor = color; } } } if(full) { finalColor = rgb; }  fragColor = vec4(finalColor, a); }";
+
+    const char* transition_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2((t.x+tx)*frameSize.x/texSize.x, (t.y+ty)*frameSize.y/texSize.y); }";
+    const char* transition_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; uniform float rot; uniform vec2 texSize; uniform sampler2D tex; uniform sampler2D texP; in vec2 txc; void main() { vec3 off = vec3(-1.0/texSize.x, 0.0, 1.0/texSize.x); vec2 size = vec2(2.0, 0.0); float s11 = texture(tex, txc).x; float s01 = texture(tex, txc+off.xy).x; float s21 = texture(tex, txc+off.zy).x; float s10 = texture(tex, txc+off.yx).x; float s12 = texture(tex, txc+off.yz).x; vec3 va = normalize(vec3(size.xy,s21-s01)); vec3 vb = normalize(vec3(size.yx,s12-s10)); vec3 bump = vec3(cross(va,vb)); vec3 light = vec3(sin(rot), -cos(rot), 0.3); float d = max(0.0, dot(normalize(light), bump)); vec2 ptxc = vec2(d, 0.0); vec3 colorFinal = vec3(texture(texP, ptxc)); fragColor = vec4(colorFinal, 1.0)";
+
+    const char* my_vertex_shader_source = (char*)"#version 330\nin vec4 position; uniform int frame; uniform vec2 frameSize; uniform vec2 off; uniform vec2 texSize; uniform mat4 model; uniform mat4 proj; in vec2 t; out vec2 txc; void main() { gl_Position = (proj*model) * position; int tx = frame%5; int ty = frame/5; txc = vec2(((t.x+tx)*frameSize.x+off.x)/texSize.x, ((t.y+ty)*frameSize.y+off.y)/texSize.y); }";
+    const char* my_fragment_shader_source = (char*)"#version 330\nlayout(location = 0) out vec4 fragColor; layout(location = 1) out vec4 fragColorN; layout(location = 2) out vec4 fragColorMisc; layout(location = 3) out vec4 fragColorB; uniform vec2 flip; uniform sampler2D tex; uniform float strength; uniform float alpha; uniform float depth; uniform sampler2D texN; in vec2 txc; void main() { fragColor = vec4(texture(tex, txc).xyz/texture(tex, txc).w, texture(tex, txc).w*alpha); }";
 #else
     int OS = -1;
 #endif
@@ -315,255 +342,255 @@ public:
     string lastTexName;
 };
 
-double dt = 1.0 / 60.0;
-double currentTime;
-double lastTime;
-double accumulator;
-unsigned int fps;
-int fpsTimer;
-TTF_Font* font;
+static double dt = 1.0 / 60.0;
+static double currentTime;
+static double lastTime;
+static double accumulator;
+static unsigned int fps;
+static int fpsTimer;
+static TTF_Font* font;
 
-float texSizeX;
-float texSizeY;
-float texType;
-float pixelSize;
-int screenW;
-int screenH;
-int displayW;
-int displayH;
-int screenPW;
-int screenPH;
-float camX;
-float camY;
-float nodeCSX;
-float nodeCSY;
-float nodeCX;
-float nodeCY;
-bool camMoving = false;
-bool draggingCam = false;
-bool draggingCam2 = false;
-float camOffset;
-float camOffsetSpeed;
-float camOffsetMagnitude;
-bool camPositive;
-float camRot;
-bool camFixed;
-int camXFinal;
-int camYFinal;
-//int selectedTile = 32;
-int zoom = 1;
-int zoomA = 1;
-float tilesW;
-float tilesH;
-bool draggingLayer;
-int draggedLayer;
-int draggedFX;
-bool draggingNode;
-int draggedNode;
-bool draggingSocket;
-bool cancelDrag;
-int draggedSocket;
-int targetDrag;
-float screenScale = 2.0;
-int logoTimer;
-int logoTimerMax = 150;
-bool logoType;
-string toolTip;
-string errorMessage;
-int errorTimer;
-vector<float> data;
-vector<Color*> palette;
-Color rampA(254, 237, 186);
-Color rampB(54, 42, 96);
-int selectedColor = 0;
-vector<Parameter*> colorParams;
-Parameter* textType;
-nEffect* textTypeFx;
-int textTypeLayer;
-Parameter* textTypeTemp;
-nEffect* textTypeFxTemp;
-int textTypeLayerTemp;
-int blinkTimer;
-bool RoC = true;
-vector<Texture*> texs;
-vector<nEffect*> newEffects;
-int collH = 18;
-int expH = 92;
-int expandedLayer;
-bool layerExpanded;
-int currentTexture;
-Socket* currentSocket;
-float barX;
-float barXRight;
-float barY;
-float barY2;
-float barY3;
-float barY4;
-float barY5;
-float layersScroll;
-float toolsScroll;
-float palScroll;
-float texScroll;
-float newEScroll;
-float layersScrollH;
-bool scrollDir;
-bool scrollSet;
-float prevLayersScroll;
-float browserScroll;
-int selectedFX;
-bool draggingParam;
-bool draggingFX;
-bool draggingNew;
-bool draggingUI;
-bool draggingSBar;
-int sBarDrag;
-float sRatio;
-int rotTimer;
-int UIdragType;
-int UIdragRange = 5;
-float mouseOX;
-float mouseOY;
-float mouseX;
-float mouseY;
-bool gameStarted;
-int view = 0;
-int doubleClickTimer;
-int typeTimer;
-float mouseSX;
-float mouseSY;
-float mouseSDX;
-float mouseSDY;
-float prevC;
-float prevCount;
-Socket* preview;
-int previewTimer;
-vector<string> listUndo;
-vector<string> listRedo;
-string currentDir;
-string filenameB;
-bool browserOpen;
-int browserMode;
-vector<File*> filenames;
-vector<string> fnUndo;
-vector<string> fnRedo;
-string lastPalDir;
-string lastPalName;
-string lastSaveDir;
-string lastSaveName;
-string lastTexDir;
-string lastTexName;
-bool overwrite;
-int selectedFile;
-GLuint gridImg;
-GLuint effectImg;
-GLuint effectImg2;
-GLuint effectImg3;
-GLuint effectImg4;
-GLuint effectImg5;
-GLuint effectImg6;
-GLuint effectImg7;
-GLuint effectImg8;
-GLuint effectImg9;
-GLuint effectImg10;
-GLuint effectImg11;
-GLuint effectImg12;
-GLuint effectImg13;
-GLuint effectImg14;
-GLuint effectImg15;
-GLuint effectImg16;
-GLuint effectImg17;
-GLuint bezierFill;
-GLuint bezierFillError;
-GLuint iconImg0;
-GLuint iconImg1;
-GLuint iconImg2;
-GLuint iconImg3;
-GLuint iconImg4;
-GLuint iconImg5;
-GLuint iconImg6;
-GLuint iconImg7;
-GLuint iconImg8;
-GLuint iconImg9;
-GLuint iconImg10;
-GLuint iconImg11;
-GLuint iconImg12;
-GLuint iconImg13;
-GLuint palImg;
-GLuint palImgReal;
-GLuint postImg;
-GLuint texImgFinal;
-GLuint fontImg;
-GLuint fontImg2;
-GLuint fontImg3;
+static float texSizeX;
+static float texSizeY;
+static float texType;
+static float pixelSize;
+static int screenW;
+static int screenH;
+static int displayW;
+static int displayH;
+static int screenPW;
+static int screenPH;
+static float camX;
+static float camY;
+static float nodeCSX;
+static float nodeCSY;
+static float nodeCX;
+static float nodeCY;
+static bool camMoving = false;
+static bool draggingCam = false;
+static bool draggingCam2 = false;
+static float camOffset;
+static float camOffsetSpeed;
+static float camOffsetMagnitude;
+static bool camPositive;
+static float camRot;
+static bool camFixed;
+static int camXFinal;
+static int camYFinal;
+//static int selectedTile = 32;
+static int zoom = 1;
+static int zoomA = 1;
+static float tilesW;
+static float tilesH;
+static bool draggingLayer;
+static int draggedLayer;
+static int draggedFX;
+static bool draggingNode;
+static int draggedNode;
+static bool draggingSocket;
+static bool cancelDrag;
+static int draggedSocket;
+static int targetDrag;
+static float screenScale = 2.0;
+static int logoTimer;
+static int logoTimerMax = 150;
+static bool logoType;
+static string toolTip;
+static string errorMessage;
+static int errorTimer;
+static vector<float> data;
+static vector<Color*> palette;
+static Color rampA(254, 237, 186);
+static Color rampB(54, 42, 96);
+static int selectedColor = 0;
+static vector<Parameter*> colorParams;
+static Parameter* textType;
+static nEffect* textTypeFx;
+static int textTypeLayer;
+static Parameter* textTypeTemp;
+static nEffect* textTypeFxTemp;
+static int textTypeLayerTemp;
+static int blinkTimer;
+static bool RoC = true;
+static vector<Texture*> texs;
+static vector<nEffect*> newEffects;
+static int collH = 18;
+static int expH = 92;
+static int expandedLayer;
+static bool layerExpanded;
+static int currentTexture;
+static Socket* currentSocket;
+static float barX;
+static float barXRight;
+static float barY;
+static float barY2;
+static float barY3;
+static float barY4;
+static float barY5;
+static float layersScroll;
+static float toolsScroll;
+static float palScroll;
+static float texScroll;
+static float newEScroll;
+static float layersScrollH;
+static bool scrollDir;
+static bool scrollSet;
+static float prevLayersScroll;
+static float browserScroll;
+static int selectedFX;
+static bool draggingParam;
+static bool draggingFX;
+static bool draggingNew;
+static bool draggingUI;
+static bool draggingSBar;
+static int sBarDrag;
+static float sRatio;
+static int rotTimer;
+static int UIdragType;
+static int UIdragRange = 5;
+static float mouseOX;
+static float mouseOY;
+static float mouseX;
+static float mouseY;
+static bool gameStarted;
+static int view = 0;
+static int doubleClickTimer;
+static int typeTimer;
+static float mouseSX;
+static float mouseSY;
+static float mouseSDX;
+static float mouseSDY;
+static float prevC;
+static float prevCount;
+static Socket* preview;
+static int previewTimer;
+static vector<string> listUndo;
+static vector<string> listRedo;
+static string currentDir;
+static string filenameB;
+static bool browserOpen;
+static int browserMode;
+static vector<File*> filenames;
+static vector<string> fnUndo;
+static vector<string> fnRedo;
+static string lastPalDir;
+static string lastPalName;
+static string lastSaveDir;
+static string lastSaveName;
+static string lastTexDir;
+static string lastTexName;
+static bool overwrite;
+static int selectedFile;
+static GLuint gridImg;
+static GLuint effectImg;
+static GLuint effectImg2;
+static GLuint effectImg3;
+static GLuint effectImg4;
+static GLuint effectImg5;
+static GLuint effectImg6;
+static GLuint effectImg7;
+static GLuint effectImg8;
+static GLuint effectImg9;
+static GLuint effectImg10;
+static GLuint effectImg11;
+static GLuint effectImg12;
+static GLuint effectImg13;
+static GLuint effectImg14;
+static GLuint effectImg15;
+static GLuint effectImg16;
+static GLuint effectImg17;
+static GLuint bezierFill;
+static GLuint bezierFillError;
+static GLuint iconImg0;
+static GLuint iconImg1;
+static GLuint iconImg2;
+static GLuint iconImg3;
+static GLuint iconImg4;
+static GLuint iconImg5;
+static GLuint iconImg6;
+static GLuint iconImg7;
+static GLuint iconImg8;
+static GLuint iconImg9;
+static GLuint iconImg10;
+static GLuint iconImg11;
+static GLuint iconImg12;
+static GLuint iconImg13;
+static GLuint palImg;
+static GLuint palImgReal;
+static GLuint postImg;
+static GLuint texImgFinal;
+static GLuint fontImg;
+static GLuint fontImg2;
+static GLuint fontImg3;
 
-GLenum my_program;
-GLenum my_vertex_shader;
-GLenum my_fragment_shader;
+static GLenum my_program;
+static GLenum my_vertex_shader;
+static GLenum my_fragment_shader;
 
-GLenum light_program;
-GLenum light_vertex_shader;
-GLenum light_fragment_shader;
+static GLenum light_program;
+static GLenum light_vertex_shader;
+static GLenum light_fragment_shader;
 
-GLenum blur_program;
-GLenum blur_vertex_shader;
-GLenum blur_fragment_shader;
+static GLenum blur_program;
+static GLenum blur_vertex_shader;
+static GLenum blur_fragment_shader;
 
-GLenum transition_program;
-GLenum transition_vertex_shader;
-GLenum transition_fragment_shader;
+static GLenum transition_program;
+static GLenum transition_vertex_shader;
+static GLenum transition_fragment_shader;
 
-GLuint screenFbo;
-GLuint screenTex;
-GLuint screenTexN;
-GLuint screenTexB;
-GLuint screenTexMisc;
+static GLuint screenFbo;
+static GLuint screenTex;
+static GLuint screenTexN;
+static GLuint screenTexB;
+static GLuint screenTexMisc;
 
-GLuint screenFboFinal;
-GLuint screenTexFinal;
+static GLuint screenFboFinal;
+static GLuint screenTexFinal;
 
-GLuint screenFboBloom;
-GLuint screenTexBloom;
+static GLuint screenFboBloom;
+static GLuint screenTexBloom;
 
-GLuint screenFboBloom2;
-GLuint screenTexBloom2;
+static GLuint screenFboBloom2;
+static GLuint screenTexBloom2;
 
-GLuint screenFboFinal2;
-GLuint screenTexFinal2;
+static GLuint screenFboFinal2;
+static GLuint screenTexFinal2;
 
-GLuint vbo;
-GLuint vboTri;
-GLuint vao;
+static GLuint vbo;
+static GLuint vboTri;
+static GLuint vao;
 
-GLuint lightTex;
-GLuint foregroundTex;
-GLuint hiddenImg;
-GLuint hidden2Img;
-GLuint digitsImg;
-GLuint brightnessImg;
-GLuint ditherTex;
-GLuint noTex;
-GLuint vignetteImg;
-GLuint logoImage;
-GLuint titleImage;
-GLuint thanksImage;
-GLuint flashImg;
+static GLuint lightTex;
+static GLuint foregroundTex;
+static GLuint hiddenImg;
+static GLuint hidden2Img;
+static GLuint digitsImg;
+static GLuint brightnessImg;
+static GLuint ditherTex;
+static GLuint noTex;
+static GLuint vignetteImg;
+static GLuint logoImage;
+static GLuint titleImage;
+static GLuint thanksImage;
+static GLuint flashImg;
 
-GLint mp_tex;
-GLint mp_texN;
-GLint mp_frameSize;
-GLint mp_texSize;
-GLint mp_off;
-GLint mp_frame;
-GLint mp_depth;
-GLint mp_alpha;
-GLint mp_strength;
-GLint mp_model;
-GLint mp_flip;
-GLint mp_proj;
-lua_State *L;
+static GLint mp_tex;
+static GLint mp_texN;
+static GLint mp_frameSize;
+static GLint mp_texSize;
+static GLint mp_off;
+static GLint mp_frame;
+static GLint mp_depth;
+static GLint mp_alpha;
+static GLint mp_strength;
+static GLint mp_model;
+static GLint mp_flip;
+static GLint mp_proj;
+static lua_State *L;
 
-glm::mat4 model = glm::mat4(1.0);
-glm::mat4 proj = glm::mat4(1.0);
+static glm::mat4 model = glm::mat4(1.0);
+static glm::mat4 proj = glm::mat4(1.0);
 
 void renderSprite2(int frame, float x, float y, float w, float h, GLuint tex, float frameW, float frameH, float rot, float centerX, float centerY, float alpha, GLuint texN, float depth, float strength, bool flipX, bool flipY, float offX = 0, float offY = 0, int cutoff = -1, int cutoff2 = -1, int cutoff3 = -1, int cutoff4 = -1);
 
@@ -631,7 +658,7 @@ GLuint loadTexture2(string path) {
     }
     return tex;
 }
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__linux__)
 GLuint loadTexture(string path) {
     GLuint tex;
     SDL_Surface* ls = IMG_Load(path.c_str());
@@ -659,7 +686,6 @@ GLuint loadTexture(string path) {
 GLuint loadTexture2(string path) {
     return NULL;
 }
-#elif __linux__
 #else
 #endif
 
@@ -854,9 +880,9 @@ void exportTexSingle(string dir) {
     SDL_Surface *surface = SDL_CreateRGBSurface(SDL_SWSURFACE, texSizeX, texSizeY, 32, 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
     glBindTexture(GL_TEXTURE_2D, currentSocket->texture);
     GLfloat *pixels = new GLfloat[int(texSizeX*texSizeY*4)];
-    if(OS == 0) {
+    if(OS & Windows) {
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, surface->pixels);
-    } else if(OS == 1) {
+    } else if(OS & Unix) {
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, pixels);
         for(int i = 0; i < texSizeX*texSizeY*4; i++) {
             Uint8 *p = (Uint8 *)surface->pixels+i*surface->format->BytesPerPixel/4;
@@ -1610,12 +1636,28 @@ void nEffect::AbortLua(lua_State* L, lua_Debug* ar) {
 
 //-----------------------------------
 
-#ifdef _WIN32
-void importFxs() {
+static string executable_path()
+{
     char cwd[1024];
     uint32_t size = sizeof(cwd);
+#if defined(__WIN32)
     GetModuleFileName(NULL, cwd, size);
-    string cwd2 = string(cwd);
+#elif defined(__APPLE__)
+    _NSGetExecutablePath(cwd, &size);
+#else
+    ssize_t readSize = readlink("/proc/self/exe", cwd, size);
+    if (readSize <= 0 || readSize == size) {
+        printf("Could not determine executable path!\n");
+        exit(1);
+    }
+    cwd[readSize] = 0;
+#endif
+    return string(cwd);
+}
+
+#ifdef _WIN32
+void importFxs() {
+    string cwd2 = executable_path();
     cwd2.erase(cwd2.rfind('\\'));
     if(cwd2.size() < 1) {
         cwd2 = "\\Nodes";
@@ -1664,10 +1706,7 @@ void importFxs() {
 }
 
 void importPresets() {
-    char cwd[1024];
-    uint32_t size = sizeof(cwd);
-    GetModuleFileName(NULL, cwd, size);
-    string cwd2 = string(cwd);
+    string cwd2 = executable_path();
     cwd2.erase(cwd2.rfind('\\'));
     if(cwd2.size() < 1) {
         cwd2 = "\\Presets";
@@ -1714,16 +1753,15 @@ void importPresets() {
     } else {
     }
 }
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__linux__)
 void importFxs() {
-    char cwd[1024];
-    uint32_t size = sizeof(cwd);
-    _NSGetExecutablePath(cwd, &size);
-    string cwd2 = string(cwd);
+    string cwd2 = executable_path();
+    cwd2.erase(cwd2.rfind('/'));
+#if defined(__APPLE__)
     cwd2.erase(cwd2.rfind('/'));
     cwd2.erase(cwd2.rfind('/'));
     cwd2.erase(cwd2.rfind('/'));
-    cwd2.erase(cwd2.rfind('/'));
+#endif
     if(cwd2.size() < 1) {
         cwd2 = "/Nodes";
     } else {
@@ -1768,14 +1806,13 @@ void importFxs() {
     }
 }
        void importPresets() {
-           char cwd[1024];
-           uint32_t size = sizeof(cwd);
-           _NSGetExecutablePath(cwd, &size);
-           string cwd2 = string(cwd);
+           string cwd2 = executable_path();
+           cwd2.erase(cwd2.rfind('/'));
+#if defined(__APPLE__)
            cwd2.erase(cwd2.rfind('/'));
            cwd2.erase(cwd2.rfind('/'));
            cwd2.erase(cwd2.rfind('/'));
-           cwd2.erase(cwd2.rfind('/'));
+#endif
            if(cwd2.size() < 1) {
                cwd2 = "/Presets";
            } else {
@@ -1819,7 +1856,6 @@ void importFxs() {
                }
            }
        }
-#elif __linux__
 #else
 #endif
 
@@ -2653,9 +2689,9 @@ void browserAction(string dir, string subDir, string parent) {
     }
     if(browserMode == 0) {
         if(exists) {
-            if(OS == 0) {
+            if(OS & Windows) {
                 palImg = loadTexture2(dir);
-            } else if(OS == 1) {
+            } else if(OS & Unix) {
                 palImg = loadTexture(dir);
             }
             loadPalette();
@@ -2803,10 +2839,6 @@ void browserAction(string dir, string subDir, string parent) {
            browserOpen = true;
        }
 
-       void getBundle() {
-           //nothing here
-       }
-
        void setIcon() {
            unzFile data = unzOpen("data.lpf");
            unz_file_info info;
@@ -2840,7 +2872,7 @@ void browserAction(string dir, string subDir, string parent) {
        void warpMouse(int x, int y) {
            SDL_WarpMouseInWindow(window, x, y);
        }
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__linux__)
        void openBrowser(string dir, int type, int mode) {
            overwrite = false;
            browserMode = mode;
@@ -2924,10 +2956,6 @@ void browserAction(string dir, string subDir, string parent) {
            browserOpen = true;
        }
 
-       void getBundle() {
-           mainBundle = CFBundleGetMainBundle();
-       }
-
        void setIcon() {
            //nothing here
        }
@@ -2951,7 +2979,6 @@ void browserAction(string dir, string subDir, string parent) {
        void warpMouse(int x, int y) {
            SDL_WarpMouseGlobal(x, y);
        }
-#elif __linux__
 #else
 #endif
 
@@ -3129,7 +3156,10 @@ void LoadStuff() {
     loadGen();
 
     logoTimer = logoTimerMax;
-    getBundle();
+
+#ifdef __APPLE__
+    mainBundle = CFBundleGetMainBundle();
+#endif
 }
 
 int textW(string text, int x, int y, GLuint tex, bool alignRight) {
@@ -3522,14 +3552,14 @@ void update() { //update
                     //glDeleteTextures(1, &output->texture);
                     glGenTextures(1, &output->texture);
                     glBindTexture(GL_TEXTURE_2D, output->texture);
-                    if(OS == 0) {
+                    if(OS & Windows) {
                         vector<GLubyte> bv;
                         for(int db = 0; db < output->texData.size(); db++) {
                             GLubyte c = fmax(0.0, fmin(255.0, output->texData.at(db)));
                             bv.push_back(c);
                         }
                         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texSizeX, texSizeY, 0, GL_RGBA, GL_UNSIGNED_BYTE, &bv[0]);
-                    } else if(OS == 1) {
+                    } else if(OS & Unix) {
                         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, texSizeX, texSizeY, 0, GL_RGBA, GL_FLOAT, &output->texData[0]);
                     }
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -6209,9 +6239,9 @@ int main(int argc, char* args[]) {
                                         if(doubleClickTimer <= 20 && selectedFile == i) {
                                             string fullDir = currentDir;
                                             if(fullDir.size() != 1) {
-                                                if(OS == 0) {
+                                                if(OS & Windows) {
                                                     fullDir = fullDir.append("\\");
-                                                } else if(OS == 1) {
+                                                } else if(OS & Unix) {
                                                     fullDir = fullDir.append("/");
                                                 }
                                             }
@@ -6272,9 +6302,9 @@ int main(int argc, char* args[]) {
                                 string newDir = currentDir;
                                 newDir.erase(newDir.rfind('/'));
                                 if(newDir.size() < 1) {
-                                    if(OS == 0) {
+                                    if(OS & Windows) {
                                         newDir = "\\";
-                                    } else if(OS == 1) {
+                                    } else if(OS & Unix) {
                                         newDir = "/";
                                     }
                                 }
@@ -6289,9 +6319,9 @@ int main(int argc, char* args[]) {
                                 //action
                                 string fullDir = currentDir;
                                 if(fullDir.size() != 1) {
-                                    if(OS == 0) {
+                                    if(OS & Windows) {
                                         fullDir = fullDir.append("\\");
-                                    } else if(OS == 1) {
+                                    } else if(OS & Unix) {
                                         fullDir = fullDir.append("/");
                                     }
                                 }
@@ -6972,7 +7002,7 @@ int main(int argc, char* args[]) {
                     int sw = 0;
                     int sh = 0;
                     SDL_GetWindowPosition(window, &sx, &sy);
-                    if(OS == 0) {
+                    if(OS & Windows) {
                         mx += sx;
                         my += sy;
                     }
@@ -6993,9 +7023,9 @@ int main(int argc, char* args[]) {
                         my-=sh;
                         oy-=sh/screenScale;
                     }
-                    if(OS == 0) {
+                    if(OS & Windows) {
                         warpMouse(mx-sx, my-sy);
-                    } else if(OS == 1) {
+                    } else if(OS & Unix) {
                         warpMouse(mx, my);
                     }
                     x += ox;
