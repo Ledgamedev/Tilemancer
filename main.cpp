@@ -134,7 +134,7 @@ using namespace std;
 
 const int Vmajor = 0;
 const int Vminor = 2;
-const int Vrevision = 0;
+const int Vrevision = 1;
 
 SDL_Window* window = NULL;
 SDL_GLContext gContext = NULL;
@@ -6300,7 +6300,11 @@ int main(int argc, char* args[]) {
                             if(x > barX+1+bSpace+8*2+bSpace*2 && x < barX+1+bSpace+8+8*2+bSpace*2 && y > bSpace+tS && y < bSpace+tS+8) {
                                 //up
                                 string newDir = currentDir;
-                                newDir.erase(newDir.rfind('/'));
+                                if(OS & Windows) {
+                                    newDir.erase(newDir.rfind('\\'));
+                                } else if(OS & Unix) {
+                                    newDir.erase(newDir.rfind('/'));
+                                }
                                 if(newDir.size() < 1) {
                                     if(OS & Windows) {
                                         newDir = "\\";
