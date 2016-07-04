@@ -661,7 +661,7 @@ GLuint loadTexture2(string path) {
 #elif defined(__APPLE__) || defined(__linux__)
 GLuint loadTexture(string path) {
     GLuint tex;
-    SDL_Surface* ls = IMG_Load(path.c_str());
+    SDL_Surface* ls = IMG_Load((string("Resources/") + path).c_str());
     if(ls != NULL) {
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
